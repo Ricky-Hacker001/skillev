@@ -1,148 +1,213 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { Lock, Mail, User, Phone, ArrowLeft, ArrowRight, ShieldCheck } from "lucide-react";
+import { Lock, Mail, User, Phone, ArrowLeft, ArrowRight, ShieldCheck, Key, RefreshCw, Loader2 } from "lucide-react";
 
-// Unique transition physics for a "robotic/precise" feel
-const formTransition = { type: "spring", stiffness: 300, damping: 30 };
+// Replace with your actual Railway/Render/Local URL
+const API_BASE_URL = "http://localhost:8000"; 
 
 const inputVariants = {
   hidden: { opacity: 0, x: 20 },
-  visible: { opacity: 1, x: 0, transition: { duration: 0.4 } },
-  exit: { opacity: 0, x: -20, transition: { duration: 0.2 } }
+  visible: { opacity: 1, x: 0 },
+  exit: { opacity: 0, x: -20 }
 };
 
 export default function Auth() {
-  const [isLogin, setIsLogin] = useState(true);
+  const [mode, setMode] = useState("login"); // login, register, verify, forgot, reset
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const navigate = useNavigate();
+
+  // Form States
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+    otp: "",
+    new_password: ""
+  });
+
+  const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+
+  /* ---------------- API HANDLERS ---------------- */
+
+  const handleRegister = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: formData.email, password: formData.password }),
+      });
+      const data = await res.json();
+      if (res.ok) setMode("verify");
+      else setError(data.detail || "Registration failed");
+    } catch (err) { setError("Server unreachable"); }
+    setLoading(false);
+  };
+
+  const handleVerify = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: formData.email, otp: formData.otp }),
+      });
+      if (res.ok) setMode("login");
+      else setError("Invalid OTP");
+    } catch (err) { setError("Verification failed"); }
+    setLoading(false);
+  };
+
+  const handleLogin = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: formData.email, password: formData.password }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        localStorage.setItem("skillev_token", data.access_token);
+        navigate("/dashboard");
+      } else setError("Invalid Credentials");
+    } catch (err) { setError("Login error"); }
+    setLoading(false);
+  };
+
+  const handleForgotPassword = async () => {
+    setLoading(true);
+    try {
+      await fetch(`${API_BASE_URL}/users/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: formData.email }),
+      });
+      setMode("reset");
+    } catch (err) { setError("Recovery failed"); }
+    setLoading(false);
+  };
+
+  const handleResetPassword = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          email: formData.email, 
+          otp: formData.otp, 
+          new_password: formData.new_password 
+        }),
+      });
+      if (res.ok) setMode("login");
+      else setError("Reset failed. Check OTP.");
+    } catch (err) { setError("Error resetting password"); }
+    setLoading(false);
+  };
 
   return (
     <div className="min-h-screen bg-[#030303] text-[#F5F5F5] font-sans flex items-center justify-center p-6 relative overflow-hidden">
-      
-      {/* 1. PROTOCOL BACKGROUND */}
       <div className="fixed inset-0 z-0">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,#0d2d1f_0%,transparent_70%)] opacity-60" />
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.05]" />
       </div>
 
-      {/* 2. NAVIGATION */}
-      <button 
-        onClick={() => navigate("/")}
-        className="fixed top-10 left-10 z-50 flex items-center gap-3 text-white/60 hover:text-emerald-400 transition-all text-[10px] font-black uppercase tracking-[0.3em]"
-      >
-        <ArrowLeft size={16} /> Protocol Home
-      </button>
-
-      <motion.div 
-        layout // Smoothly animates the container height change
-        initial={{ opacity: 0, y: 20 }} 
-        animate={{ opacity: 1, y: 0 }} 
-        className="relative z-10 w-full max-w-[440px]"
-      >
-        {/* LOGO & HEADER */}
-        <div className="text-center mb-10">
-          <motion.div 
-            whileHover={{ rotate: 360 }}
-            transition={{ duration: 0.8 }}
-            className="inline-flex w-14 h-14 bg-emerald-500 rounded-2xl items-center justify-center font-black text-black text-lg mb-6 shadow-[0_0_30px_rgba(16,185,129,0.3)]"
-          >
-            SK
-          </motion.div>
-          <h2 className="text-4xl font-black tracking-tighter italic text-white uppercase italic">
-            {isLogin ? "Identity_Verify" : "Register_ID"}
+      <motion.div layout className="relative z-10 w-full max-w-[440px]">
+        {/* LOGO & ERROR MSG */}
+        <div className="text-center mb-8">
+          <div className="inline-flex w-14 h-14 bg-emerald-500 rounded-2xl items-center justify-center font-black text-black text-lg mb-6 shadow-[0_0_30px_rgba(16,185,129,0.3)]">SK</div>
+          <h2 className="text-3xl font-black tracking-tighter italic uppercase text-white">
+            {mode === "login" && "Identity_Verify"}
+            {mode === "register" && "Register_ID"}
+            {mode === "verify" && "OTP_Verify"}
+            {mode === "forgot" && "Reset_Request"}
+            {mode === "reset" && "Update_Key"}
           </h2>
-          <p className="text-white/60 text-[10px] mt-3 font-mono uppercase tracking-[0.3em]">
-            {isLogin ? "CREDENTIALS_REQUIRED" : "NEW_PROTOCOL_SEQUENCE"}
-          </p>
+          {error && <p className="text-red-500 text-[10px] mt-2 font-mono uppercase tracking-widest">{error}</p>}
         </div>
 
-        {/* AUTH CARD */}
-        <motion.div 
-          layout
-          className="bg-[#080808] border border-white/10 rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden"
-        >
+        <motion.div layout className="bg-[#080808] border border-white/10 rounded-[2.5rem] p-10 shadow-2xl">
           <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
-            <AnimatePresence mode="popLayout" initial={false}>
+            <AnimatePresence mode="wait">
               
-              {/* REGISTER ONLY: Name Field */}
-              {!isLogin && (
-                <motion.div key="name" variants={inputVariants} initial="hidden" animate="visible" exit="exit" className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80 ml-4">Full Name</label>
+              {/* LOGIN / REGISTER / FORGOT PHASE: Email Input */}
+              {(mode === "login" || mode === "register" || mode === "forgot" || mode === "reset") && (
+                <motion.div key="email" variants={inputVariants} initial="hidden" animate="visible" exit="exit" className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80 ml-4">Email Address</label>
                   <div className="relative">
-                    <User className="absolute left-5 top-1/2 -translate-y-1/2 text-white/40" size={18} />
-                    <input type="text" placeholder="Rick Sanchez" className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-14 pr-6 text-sm text-white focus:border-emerald-500/50 outline-none transition-all placeholder:text-white/20" />
+                    <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-white/40" size={18} />
+                    <input name="email" value={formData.email} onChange={handleChange} type="email" placeholder="rick@citadel.io" className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-14 pr-6 text-sm text-white focus:border-emerald-500/50 outline-none transition-all" />
                   </div>
                 </motion.div>
               )}
 
-              {/* SHARED: Email/Phone Field */}
-              <motion.div key="contact" layout className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80 ml-4">
-                  {isLogin ? "Email or Phone" : "Email Address"}
-                </label>
-                <div className="relative">
-                  <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-white/40" size={18} />
-                  <input type="text" placeholder={isLogin ? "Email or +91..." : "name@citadel.io"} className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-14 pr-6 text-sm text-white focus:border-emerald-500/50 outline-none transition-all placeholder:text-white/20" />
-                </div>
-              </motion.div>
-
-              {/* REGISTER ONLY: Phone Field */}
-              {!isLogin && (
-                <motion.div key="phone" variants={inputVariants} initial="hidden" animate="visible" exit="exit" className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80 ml-4">Phone Number</label>
+              {/* LOGIN / REGISTER PHASE: Password Input */}
+              {(mode === "login" || mode === "register") && (
+                <motion.div key="pass" variants={inputVariants} initial="hidden" animate="visible" exit="exit" className="space-y-2">
+                  <div className="flex justify-between items-center px-4">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80 italic">Master Key</label>
+                    {mode === "login" && <button onClick={() => setMode("forgot")} className="text-[9px] font-black text-emerald-500/60 uppercase">Lost Key?</button>}
+                  </div>
                   <div className="relative">
-                    <Phone className="absolute left-5 top-1/2 -translate-y-1/2 text-white/40" size={18} />
-                    <input type="tel" placeholder="+91 00000 00000" className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-14 pr-6 text-sm text-white focus:border-emerald-500/50 outline-none transition-all placeholder:text-white/20" />
+                    <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-white/40" size={18} />
+                    <input name="password" value={formData.password} onChange={handleChange} type="password" placeholder="••••••••" className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-14 pr-6 text-sm text-white focus:border-emerald-500/50 outline-none transition-all" />
                   </div>
                 </motion.div>
               )}
 
-              {/* SHARED: Password Field */}
-              <motion.div key="pass" layout className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80 ml-4 italic">Master Key</label>
-                <div className="relative">
-                  <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-white/40" size={18} />
-                  <input type="password" placeholder="••••••••" className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-14 pr-6 text-sm text-white focus:border-emerald-500/50 outline-none transition-all placeholder:text-white/20" />
-                </div>
-              </motion.div>
-
-              {/* REGISTER ONLY: Confirm Password */}
-              {!isLogin && (
-                <motion.div key="confirm" variants={inputVariants} initial="hidden" animate="visible" exit="exit" className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80 ml-4">Confirm Key</label>
+              {/* VERIFY / RESET PHASE: OTP Input */}
+              {(mode === "verify" || mode === "reset") && (
+                <motion.div key="otp" variants={inputVariants} initial="hidden" animate="visible" exit="exit" className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80 ml-4">Enter OTP</label>
                   <div className="relative">
                     <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 text-white/40" size={18} />
-                    <input type="password" placeholder="••••••••" className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-14 pr-6 text-sm text-white focus:border-emerald-500/50 outline-none transition-all placeholder:text-white/20" />
+                    <input name="otp" value={formData.otp} onChange={handleChange} type="text" placeholder="123456" className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-14 pr-6 text-sm text-white focus:border-emerald-500/50 outline-none transition-all" />
+                  </div>
+                </motion.div>
+              )}
+
+              {/* RESET PHASE: New Password */}
+              {mode === "reset" && (
+                <motion.div key="new-pass" variants={inputVariants} initial="hidden" animate="visible" exit="exit" className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80 ml-4">New Master Key</label>
+                  <div className="relative">
+                    <Key className="absolute left-5 top-1/2 -translate-y-1/2 text-white/40" size={18} />
+                    <input name="new_password" value={formData.new_password} onChange={handleChange} type="password" placeholder="••••••••" className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-14 pr-6 text-sm text-white focus:border-emerald-500/50 outline-none transition-all" />
                   </div>
                 </motion.div>
               )}
 
             </AnimatePresence>
 
-            <motion.button 
-              layout
-              onClick={() => navigate("/dashboard")} 
-              className="w-full mt-4 py-5 bg-emerald-600 rounded-2xl font-black text-xs uppercase tracking-[0.3em] hover:bg-emerald-500 transition-all flex items-center justify-center gap-3 text-white shadow-xl shadow-emerald-900/20"
+            {/* ACTION BUTTONS */}
+            <button 
+              disabled={loading}
+              onClick={() => {
+                if (mode === "login") handleLogin();
+                if (mode === "register") handleRegister();
+                if (mode === "verify") handleVerify();
+                if (mode === "forgot") handleForgotPassword();
+                if (mode === "reset") handleResetPassword();
+              }}
+              className="w-full py-5 bg-emerald-600 rounded-2xl font-black text-xs uppercase tracking-[0.3em] hover:bg-emerald-500 transition-all flex items-center justify-center gap-3 text-white disabled:opacity-50"
             >
-              {isLogin ? "Execute Login" : "Initialize ID"}
-              <ArrowRight size={18} />
-            </motion.button>
+              {loading ? <Loader2 className="animate-spin" size={18} /> : mode === "login" ? "Verify Access" : "Initialize"}
+              {!loading && <ArrowRight size={18} />}
+            </button>
           </form>
         </motion.div>
 
-        {/* TOGGLE BUTTON */}
+        {/* MODE SWITCHER */}
         <button 
-          onClick={() => setIsLogin(!isLogin)} 
-          className="w-full mt-8 text-[10px] font-black uppercase tracking-[0.3em] text-white/40 hover:text-emerald-400 transition-all text-center"
+          onClick={() => setMode(mode === "login" ? "register" : "login")}
+          className="w-full mt-8 text-[10px] font-black uppercase tracking-[0.3em] text-white/40 hover:text-emerald-400 text-center"
         >
-          {isLogin ? "New user? Create Profile" : "Existing ID? Log in"}
+          {mode === "login" ? "No ID? Create Profile" : "Existing ID? Log in"}
         </button>
       </motion.div>
-
-      {/* FOOTER DECOR */}
-      <div className="fixed bottom-8 text-[9px] font-mono text-white/20 uppercase tracking-[0.4em]">
-        Status: Secure_Protocol_v4.2 // Node_Active
-      </div>
     </div>
   );
 }
