@@ -77,6 +77,9 @@ export default function Dashboard() {
       icon: <Code className="text-emerald-500" size={32} />,
       desc: "Architecting scalable systems and secure middleware.",
       tasks: [
+        // 👇 NEW LAB ADDED HERE
+        { id: "flexbox-lab", title: "CSS Flexbox Repair", level: "Beginner", time: "15m" }, 
+        
         { id: "api-design", title: "REST API Architecture", level: "Beginner", time: "30m" },
         { id: "db-optimization", title: "Query Optimization", level: "Advanced", time: "40m" }
       ]
