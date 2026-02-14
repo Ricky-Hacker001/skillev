@@ -1,11 +1,13 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import LandingPage from "./pages/LandingPage";
 import Auth from "./pages/Auth";
-import Dashboard from "./pages/Dashboard"; // <--- Updated Import
+import Dashboard from "./pages/Dashboard";
 import Workspace from "./pages/Workspace";
+import EvidenceReport from "./pages/EvidenceReport"; // <--- New Import
 
 /**
  * PROTECTED ROUTE MIDDLEWARE
+ * Only allows authenticated users to access Dashboard and Workspace.
  */
 const ProtectedRoute = ({ children }) => {
   const isAuthenticated = !!localStorage.getItem("skillev_token");
@@ -15,14 +17,21 @@ const ProtectedRoute = ({ children }) => {
 function App() {
   return (
     <Router>
+      {/* Selection color set to emerald to match Skillev branding 
+      */}
       <div className="selection:bg-emerald-500/30">
         <Routes>
-          {/* Public Routes */}
+          {/* --- PUBLIC ROUTES --- */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Auth />} />
           <Route path="/register" element={<Auth />} />
 
-          {/* Protected Dashboard Route */}
+          {/* RECRUITER ACCESS: This route is public. 
+              Recruiters can view proof via a shared link without an account.
+          */}
+<Route path="/evidence/:taskId" element={<EvidenceReport />} />
+
+          {/* --- PROTECTED ROUTES --- */}
           <Route 
             path="/dashboard" 
             element={
@@ -33,15 +42,15 @@ function App() {
           />
 
           <Route 
-  path="/workspace/:domain/:taskId" 
-  element={
-    <ProtectedRoute>
-      <Workspace />
-    </ProtectedRoute>
-  } 
-/>
+            path="/workspace/:domain/:taskId" 
+            element={
+              <ProtectedRoute>
+                <Workspace />
+              </ProtectedRoute>
+            } 
+          />
 
-          {/* Catch-all Redirect */}
+          {/* --- FALLBACKS --- */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

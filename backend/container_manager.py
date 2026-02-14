@@ -3,6 +3,11 @@ import socket
 import time
 import threading
 from datetime import datetime
+from sqlalchemy.sql import func
+
+# Internal Imports
+from database import SessionLocal
+import models 
 
 client = docker.from_env()
 
@@ -21,102 +26,144 @@ def get_or_create_room_network(domain: str):
     except docker.errors.NotFound:
         return client.networks.create(network_name, driver="bridge")
 
-def stream_container_logs(container_id, user_id, task_id):
+def cleanup_existing_task(user_id, task_id, mode):
     """
-    THE EVIDENCE ENGINE: Streams logs and captures proof points.
+    TOTAL ISOLATION: Nukes any existing container for this specific user, 
+    task, AND mode to ensure a 100% fresh start.
     """
+    container_name = f"skillev_{user_id}_{task_id}_{mode}"
     try:
+        container = client.containers.get(container_name)
+        container.remove(force=True)
+        print(f"🧹 CLEANUP: Nuked isolated container {container_name}")
+    except docker.errors.NotFound:
+        pass
+
+def capture_evidence_engine(container_id, user_id, domain, task_id, mode):
+    """
+    Streams logs from Docker and commits them to a fresh DB entry.
+    Since we create a NEW report here, logs never mix.
+    """
+    db = SessionLocal()
+    try:
+        # 1. Create a brand new EvidenceReport entry for this specific attempt
+        report = models.EvidenceReport(
+            user_id=user_id,
+            domain=domain,
+            task_id=task_id,
+            container_id=container_id,
+            mode=mode, 
+            logs=[],
+            status="active"
+        )
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+
         container = client.containers.get(container_id)
-        # Use tail=0 to only get new logs moving forward
+        
+        # 2. Stream logs and tag them
         for line in container.logs(stream=True, follow=True, tail=0):
             log_entry = line.decode('utf-8').strip()
             
-            # Evidence Capture Logic
-            if "EVIDENCE_LOG" in log_entry or "SELECT" in log_entry.upper():
-                print(f"💎 PROOF CAPTURED [User {user_id} | {task_id}]: {log_entry}")
+            # Tag the log with the mode for aggregate history clarity
+            tagged_message = f"[MODE:{mode.upper()}] {log_entry}"
+            
+            new_event = {
+                "timestamp": datetime.now().isoformat(),
+                "type": "stdout",
+                "message": tagged_message
+            }
+
+            db.refresh(report)
+            current_logs = list(report.logs) if report.logs else []
+            current_logs.append(new_event)
+            report.logs = current_logs
+
+            # 3. Success Detection
+            if "SUCCESS" in log_entry.upper():
+                report.status = "completed"
+                report.completed_at = datetime.now()
+                print(f"✅ SEALED: {mode.upper()} evidence for User {user_id}")
+            
+            db.commit()
                 
     except Exception as e:
-        print(f"Evidence stream interrupted: {e}")
+        print(f"⚠️ Evidence Engine Error: {e}")
+    finally:
+        db.close()
 
-def start_sub_room_container(user_id: int, domain: str, task_id: str):
+def start_sub_room_container(user_id: int, domain: str, task_id: str, mode: str = "hiring"):
     """
-    Orchestrates the lifecycle with extended health checks to prevent 
-    frontend loading hangs.
+    Orchestrates the lifecycle of an isolated lab environment.
     """
     get_or_create_room_network(domain)
-    container_name = f"skillev_{domain}_{task_id}_{user_id}"
+    
+    # --- MODE ISOLATION LOGIC ---
+    # By including 'mode' in the name, we ensure the containers are physically distinct
+    container_name = f"skillev_{user_id}_{task_id}_{mode}"
     
     image_map = {
-        "sql-injection": "skillev-labs-sqli:latest",
+        "sql-injection": "skillev-labs-sqli:v5",
         "broken-auth": "skillev-labs-auth:latest"
     }
     
     image = image_map.get(task_id)
     if not image:
-        return None, "Task image not found"
+        return None, f"Image not found for task: {task_id}"
 
-    # 1. CLEANUP
-    try:
-        old_container = client.containers.get(container_name)
-        old_container.stop(timeout=2)
-        old_container.remove()
-    except docker.errors.NotFound:
-        pass 
+    # 1. Clear previous session for THIS mode
+    cleanup_existing_task(user_id, task_id, mode)
 
-    # 2. PORT ALLOCATION
+    # 2. Assign dynamic port
     assigned_port = find_free_port()
 
-    # 3. CONTAINER EXECUTION
+    # 3. Launch isolated container
     try:
-        client.images.get(image)
-        
         container = client.containers.run(
             image=image,
             name=container_name,
             network=f"{domain}_room_net",
             detach=True,
+            environment={"LAB_MODE": mode}, # Flask app uses this for internal logic
             mem_limit="256m",
-            nano_cpus=500000000, # 0.5 CPU limit
+            nano_cpus=500000000, 
             ports={'5000/tcp': ('127.0.0.1', assigned_port)}, 
             labels={
                 "user_id": str(user_id),
-                "domain": domain,
                 "task_id": task_id,
-                "port": str(assigned_port)
+                "mode": mode,
             }
         )
 
-        # 4. EXTENDED MICRO-POLLING HEALTH CHECK
-        # We now check every 100ms for up to 6 seconds (60 attempts).
-        # This ensures the sandbox is 100% ready for the iframe.
+        # 4. Wait for the service to be healthy
         is_ready = False
-        for _ in range(60): 
+        for _ in range(50): 
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(0.1) 
+                s.settimeout(0.5) 
                 if s.connect_ex(('127.0.0.1', assigned_port)) == 0:
-                    # Small grace period for the web server inside to bind its headers
-                    time.sleep(0.5) 
+                    time.sleep(1.0) # Flask startup grace period
                     is_ready = True
                     break
-            time.sleep(0.1) 
+            time.sleep(0.2) 
 
         if is_ready:
-            # 5. START EVIDENCE ENGINE
+            # 5. Start a background thread to watch this specific mode's logs
             threading.Thread(
-                target=stream_container_logs, 
-                args=(container.id, user_id, task_id), 
+                target=capture_evidence_engine, 
+                args=(container.id, user_id, domain, task_id, mode), 
                 daemon=True
             ).start()
             
             return {"container_id": container.id, "port": assigned_port}, None
         
-        return {"container_id": container.id, "port": assigned_port}, "Warning: Service health check timed out."
+        return {"container_id": container.id, "port": assigned_port}, "Service initialization timeout."
 
     except Exception as e:
-        return None, f"Orchestration Error: {str(e)}"
+        return None, f"Docker Orchestration Error: {str(e)}"
 
 def kill_sub_room(container_id: str):
-    """Safe termination of the environment."""
+    """Terminates an isolated lab node."""
     try:
         container = client.containers.get(container_id)
         container.stop(timeout=2)
