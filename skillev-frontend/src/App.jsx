@@ -1,11 +1,14 @@
+import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import LandingPage from "./pages/LandingPage";
 import Auth from "./pages/Auth";
-import Dashboard from "./pages/Dashboard"; // <--- Updated Import
+import Dashboard from "./pages/Dashboard"; 
 import Workspace from "./pages/Workspace";
+import FlexboxLab from './pages/labs/FlexboxLab'; // Import your lab
 
 /**
  * PROTECTED ROUTE MIDDLEWARE
+ * Checks if a token exists. If not, kicks user to /login.
  */
 const ProtectedRoute = ({ children }) => {
   const isAuthenticated = !!localStorage.getItem("skillev_token");
@@ -17,12 +20,15 @@ function App() {
     <Router>
       <div className="selection:bg-emerald-500/30">
         <Routes>
-          {/* Public Routes */}
+          
+          {/* --- PUBLIC ROUTES --- */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Auth />} />
           <Route path="/register" element={<Auth />} />
 
-          {/* Protected Dashboard Route */}
+          {/* --- PROTECTED ROUTES --- */}
+          
+          {/* 1. Dashboard */}
           <Route 
             path="/dashboard" 
             element={
@@ -32,17 +38,30 @@ function App() {
             } 
           />
 
+          {/* 2. Specific Labs (Define these BEFORE the generic workspace) */}
           <Route 
-  path="/workspace/:domain/:taskId" 
-  element={
-    <ProtectedRoute>
-      <Workspace />
-    </ProtectedRoute>
-  } 
-/>
+            path="/workspace/fullstack/flexbox-lab" 
+            element={
+              <ProtectedRoute>
+                <FlexboxLab />
+              </ProtectedRoute>
+            } 
+          />
 
-          {/* Catch-all Redirect */}
+          {/* 3. Generic Workspace (Captures all other tasks) */}
+          {/* This handles: /workspace/cybersecurity/sql-injection, etc. */}
+          <Route 
+            path="/workspace/:domain/:taskId" 
+            element={
+              <ProtectedRoute>
+                <Workspace />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* --- CATCH-ALL --- */}
           <Route path="*" element={<Navigate to="/" replace />} />
+          
         </Routes>
       </div>
     </Router>
