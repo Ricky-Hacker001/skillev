@@ -1,40 +1,96 @@
-from fastapi import FastAPI, Depends
-from fastapi.middleware.cors import CORSMiddleware # <--- 1. Import this
-from fastapi.security import OAuth2PasswordBearer
-from database import engine, Base
-from users import router as user_router
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 
-# Create Database Tables
+# Internal Imports
+from database import engine, Base, get_db
+from users import router as user_router
+import container_manager 
+
+# Initialize Database Tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Skillev API")
 
-# 2. Configure CORS
-# This allows your React frontend to talk to this backend
-origins = [
-    "http://localhost:3000",    # React default
-    "http://localhost:5173",    # Vite default
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
-]
-
+# --- 1. CORS CONFIGURATION ---
+# Note: For the hackathon, we allow all origins, but in production, 
+# you'd restrict this to your specific frontend URL.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,            # Allow your frontend origins
+    allow_origins=["*"], 
     allow_credentials=True,
-    allow_methods=["*"],              # Allow all methods (GET, POST, OPTIONS, etc.)
-    allow_headers=["*"],              # Allow all headers (Content-Type, Authorization, etc.)
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Register the User Routes
+# --- 2. ROUTER REGISTRATION ---
 app.include_router(user_router.router)
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
-
-@app.get("/secure-data")
-def read_secure_data(token: str = Depends(oauth2_scheme)):
-    return {"message": "Success", "status": "Authorized"}
+# --- 3. CORE ROUTES ---
 
 @app.get("/")
 def root():
-    return {"message": "Skillev API is running!"}
+    return {
+        "message": "Skillev Protocol API is running!", 
+        "engine": "Docker-Orchestrator-v1",
+        "status": "Online"
+    }
+
+# --- 4. TASK EXECUTION (The Engine) ---
+
+@app.post("/tasks/start/{domain}/{task_id}")
+async def start_task(domain: str, task_id: str, user_id: int):
+    """
+    Triggers the creation of an isolated, timed Docker node.
+    Returns the dynamic port for the frontend iframe.
+    """
+    valid_domains = ["cybersecurity", "fullstack"]
+    if domain not in valid_domains:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail=f"Domain '{domain}' is not authorized in this sector."
+        )
+
+    # Calling the container manager
+    # Now returns a dict: {"container_id": ..., "port": ...} or (None, error_msg)
+    result, error = container_manager.start_sub_room_container(user_id, domain, task_id)
+    
+    if error and not result:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Orchestration Failure: {error}"
+        )
+    
+    # Success response
+    return {
+        "status": "success",
+        "container_id": result["container_id"],
+        "port": result["port"],
+        "url": f"http://127.0.0.1:{result['port']}",
+        "message": f"Node isolated and live on port {result['port']}",
+        "warnings": error if error else None # Capture health-check timeouts
+    }
+
+@app.delete("/tasks/stop/{container_id}")
+async def stop_task(container_id: str):
+    """
+    Terminates the environment and releases host resources.
+    """
+    success = container_manager.kill_sub_room(container_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Node not found or already terminated."
+        )
+    return {
+        "status": "success", 
+        "message": "Protocol environment successfully wiped."
+    }
+
+# --- 5. LOGGING & EVIDENCE (Coming Soon) ---
+
+@app.get("/secure-data")
+def read_secure_data():
+    # Placeholder for the protected endpoint
+    return {"message": "You are authorized.", "status": "Secure"}
+
