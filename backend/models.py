@@ -40,3 +40,4 @@ class EvidenceReport(Base):
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    visual_evidence = Column(JSON, default=[])

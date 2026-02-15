@@ -3,7 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Terminal, ArrowLeft, Loader2, Activity, Fingerprint,
-  ShieldAlert, Wifi, CheckCircle, GraduationCap, Briefcase, EyeOff 
+  ShieldAlert, Wifi, CheckCircle, GraduationCap, Briefcase, 
+  EyeOff, Info, Clock, AlertTriangle, Camera, Target
 } from "lucide-react";
 
 const API_BASE_URL = "http://127.0.0.1:8000";
@@ -17,28 +18,109 @@ export default function Workspace() {
   const [loading, setLoading] = useState(true);
   const [isIframeLoaded, setIsIframeLoaded] = useState(false);
   const [containerData, setContainerData] = useState({ id: null, port: null });
+  const [activeReportId, setActiveReportId] = useState(null);
   const [error, setError] = useState("");
   const [isCompleted, setIsCompleted] = useState(false); 
   
-  // --- ANTI-CHEAT STATE ---
   const [keystrokeBuffer, setKeystrokeBuffer] = useState([]);
   const [focusEvents, setFocusEvents] = useState([]);
   const [logs, setLogs] = useState([]);
   
-  // Refs to prevent closure staleness in listeners
   const modeRef = useRef(currentMode);
   const isCompletedRef = useRef(false);
   const containerIdRef = useRef(null);
 
-  // --- LAYER 1: KEYSTROKE & ANTI-PASTE ENGINE ---
+  // --- DYNAMIC CONTENT ENGINE ---
+  const getTaskMetadata = () => {
+    const registry = {
+      "sql-injection": {
+        title: "SQL Injection",
+        objective: "Utilize payload injection techniques to bypass the database authentication layer and retrieve administrative credentials.",
+        requirement: "SQL Syntax Knowledge",
+        iconColor: "text-emerald-400"
+      },
+      "broken-auth": {
+        title: "Broken Authentication",
+        objective: "Identify flaws in session token generation. Manipulate browser cookies to escalate privileges from 'guest' to 'admin'.",
+        requirement: "Session/Cookie Mastery",
+        iconColor: "text-red-400"
+      },
+      "idor": {
+        title: "Insecure Direct Object Reference",
+        objective: "Manipulate resource identifiers in URL parameters to access unauthorized user data nodes.",
+        requirement: "Parameter Tampering",
+        iconColor: "text-amber-400"
+      }
+    };
+    return registry[taskId] || { 
+      title: taskId.replace(/-/g, ' '), 
+      objective: "Complete the forensic laboratory task.", 
+      requirement: "General Cybersecurity",
+      iconColor: "text-emerald-400"
+    };
+  };
+
+  const meta = getTaskMetadata();
+
+  // --- VISUAL SURVEILLANCE ENGINE ---
+  const captureVisualEvidence = async (type) => {
+    if (modeRef.current !== "hiring" || isCompletedRef.current || !activeReportId) return;
+
+    setLogs(prev => [...prev, { 
+      time: new Date().toLocaleTimeString(), 
+      msg: `SYSCALL: Initiating ${type} integrity capture...`, 
+      type: "system" 
+    }]);
+
+    try {
+      let stream;
+      if (type === "webcam") {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      } else {
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      }
+
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      await new Promise((resolve) => (video.onloadedmetadata = resolve));
+      video.play();
+
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      
+      setTimeout(async () => {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const base64Image = canvas.toDataURL("image/jpeg", 0.6);
+        stream.getTracks().forEach(track => track.stop());
+
+        const token = localStorage.getItem("skillev_token");
+        await fetch(`${API_BASE_URL}/evidence/upload-visual`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ report_id: activeReportId, type: type, image: base64Image })
+        });
+
+        setLogs(prev => [...prev, { 
+          time: new Date().toLocaleTimeString(), 
+          msg: `SUCCESS: ${type.toUpperCase()} frame hashed and sealed.`, 
+          type: "success" 
+        }]);
+      }, 500);
+    } catch (err) {
+      setLogs(prev => [...prev, { 
+        time: new Date().toLocaleTimeString(), 
+        msg: `CRITICAL: Visual capture denied or failed.`, 
+        type: "error" 
+      }]);
+    }
+  };
+
+  // --- INPUT HANDLERS ---
   const recordKeystroke = useCallback((e) => {
     if (isCompletedRef.current) return;
-    const timestamp = performance.now();
-    setKeystrokeBuffer(prev => [...prev, {
-        key: e.key,
-        time: timestamp,
-        type: e.type
-    }]);
+    setKeystrokeBuffer(prev => [...prev, { key: e.key, time: performance.now(), type: e.type }]);
   }, []);
 
   const handlePaste = useCallback((e) => {
@@ -46,20 +128,18 @@ export default function Workspace() {
       e.preventDefault();
       setLogs(prev => [...prev, { 
         time: new Date().toLocaleTimeString(), 
-        msg: "SECURITY_ALERT: External payload injection blocked. Manual entry required.", 
+        msg: "BLOCK: External payload injection denied.", 
         type: "error" 
       }]);
     }
   }, []);
 
-  // --- LAYER 2: TAB-FOCUS MONITORING ---
   const handleVisibilityChange = useCallback(() => {
     if (document.hidden && !isCompletedRef.current && modeRef.current === "hiring") {
-      const event = { time: new Date().toISOString(), type: "blur" };
-      setFocusEvents(prev => [...prev, event]);
+      setFocusEvents(prev => [...prev, { time: new Date().toISOString(), type: "blur" }]);
       setLogs(prev => [...prev, { 
         time: new Date().toLocaleTimeString(), 
-        msg: "INTEGRITY_WARNING: User exited terminal focus. Incident logged.", 
+        msg: "WARNING: Focus lost. Integrity check logged.", 
         type: "system" 
       }]);
     }
@@ -69,7 +149,6 @@ export default function Workspace() {
     window.addEventListener("keydown", recordKeystroke);
     window.addEventListener("paste", handlePaste, true); 
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    
     return () => {
       window.removeEventListener("keydown", recordKeystroke);
       window.removeEventListener("paste", handlePaste, true);
@@ -77,7 +156,7 @@ export default function Workspace() {
     };
   }, [recordKeystroke, handlePaste, handleVisibilityChange]);
 
-  // --- 3. ENVIRONMENT ORCHESTRATION ---
+  // --- LIFECYCLE ---
   useEffect(() => {
     let currentContainerId = null;
     modeRef.current = currentMode;
@@ -85,60 +164,67 @@ export default function Workspace() {
     const startEnvironment = async () => {
       setLoading(true);
       setError("");
-      setIsIframeLoaded(false);
-      setIsCompleted(false);
-      isCompletedRef.current = false;
-      setKeystrokeBuffer([]);
-      setFocusEvents([]);
-      
-      setLogs([
-        { time: new Date().toLocaleTimeString(), msg: `SYS_INIT: Starting protocol in ${currentMode.toUpperCase()} mode...`, type: "system" },
-      ]);
+      setLogs([{ time: new Date().toLocaleTimeString(), msg: `Initializing ${currentMode} environment...`, type: "system" }]);
 
       try {
         const token = localStorage.getItem("skillev_token");
         const res = await fetch(`${API_BASE_URL}/tasks/start/${domain}/${taskId}?mode=${currentMode}`, {
           method: "POST",
-          headers: { 
-            "Authorization": `Bearer ${token}`,
-            "Content-Type": "application/json" 
-          },
+          headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
         });
-        
         const data = await res.json();
 
         if (res.ok) {
           currentContainerId = data.container_id;
           containerIdRef.current = data.container_id;
           setContainerData({ id: data.container_id, port: data.port });
+          
+          const evidenceRes = await fetch(`${API_BASE_URL}/users/my-evidence`, {
+            headers: { "Authorization": `Bearer ${token}` }
+          });
+          const evidenceList = await evidenceRes.json();
+          const currentSession = evidenceList.find(r => r.container_id === data.container_id);
+          if (currentSession) setActiveReportId(currentSession.id);
+
           setLogs(prev => [...prev, 
-            { time: new Date().toLocaleTimeString(), msg: `NODE_ALLOCATED: Port ${data.port} assigned.`, type: "success" },
-            { time: new Date().toLocaleTimeString(), msg: `MODE_SET: ${currentMode.toUpperCase()} flags injected.`, type: "system" }
+            { time: new Date().toLocaleTimeString(), msg: `Node allocated on port ${data.port}.`, type: "success" }
           ]);
         } else {
           setError(data.detail || "Node Allocation Failed");
           setLoading(false);
         }
       } catch (err) {
-        setError("Protocol Error: Backend Unreachable");
+        setError("Connection Error: Backend Unreachable");
         setLoading(false);
       }
     };
 
     startEnvironment();
-
     return () => {
       if (currentContainerId) {
         const token = localStorage.getItem("skillev_token");
         fetch(`${API_BASE_URL}/tasks/stop/${currentContainerId}`, { 
-          method: "DELETE",
-          headers: { "Authorization": `Bearer ${token}` }
+          method: "DELETE", headers: { "Authorization": `Bearer ${token}` }
         }).catch(err => console.error("Cleanup failed:", err));
       }
     };
   }, [domain, taskId, currentMode]);
 
-  // --- 4. SUCCESS POLLING & FORENSIC SYNC ---
+  useEffect(() => {
+    if (currentMode === "hiring" && activeReportId && isIframeLoaded) {
+      const captureBaseline = async () => {
+        await captureVisualEvidence("webcam");
+        await captureVisualEvidence("screen");
+      };
+      captureBaseline();
+      const surveillanceInterval = setInterval(() => {
+        if (isCompletedRef.current) return clearInterval(surveillanceInterval);
+        captureVisualEvidence(Math.random() > 0.5 ? "webcam" : "screen");
+      }, 120000);
+      return () => clearInterval(surveillanceInterval);
+    }
+  }, [activeReportId, isIframeLoaded, currentMode]);
+
   useEffect(() => {
     let poller;
     if (isIframeLoaded && !isCompleted && containerData.id) {
@@ -149,165 +235,186 @@ export default function Workspace() {
             headers: { "Authorization": `Bearer ${token}` }
           });
           const evidenceList = await res.json();
+          const currentSessionReport = evidenceList.find(r => r.container_id === containerData.id);
           
-          const currentSessionReport = evidenceList.find(
-            (report) => report.container_id === containerData.id
-          );
-          
-          // CRITICAL: Ensure we found the CURRENT session report and it is marked completed
           if (currentSessionReport && currentSessionReport.status === "completed") {
-            // STOP POLLING IMMEDIATELY
             clearInterval(poller);
-            
-            // SYNC FORENSIC DATA BEFORE SHOWING COMPLETION
             const syncRes = await fetch(`${API_BASE_URL}/users/sync-typing-profile`, {
                 method: "POST",
-                headers: { 
-                    "Authorization": `Bearer ${token}`,
-                    "Content-Type": "application/json" 
-                },
-                body: JSON.stringify({
-                    report_id: currentSessionReport.id,
-                    mode: currentMode,
-                    keystrokes: keystrokeBuffer,
+                headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    report_id: currentSessionReport.id, 
+                    mode: currentMode, 
+                    keystrokes: keystrokeBuffer, 
                     focus_violations: focusEvents 
                 })
             });
-
             if (syncRes.ok) {
                 isCompletedRef.current = true;
                 setIsCompleted(true);
-                setLogs(prev => [...prev, { 
-                  time: new Date().toLocaleTimeString(), 
-                  msg: "PROTOCOL_BREACH: Forensic audit sealed.", 
-                  type: "success" 
-                }]);
             }
           }
-        } catch (err) {
-          console.error("Polling error:", err);
-        }
+        } catch (err) { console.error("Sync error:", err); }
       }, 3000);
     }
     return () => clearInterval(poller);
   }, [isIframeLoaded, isCompleted, containerData.id, keystrokeBuffer, focusEvents, currentMode]);
 
   return (
-    <div className="min-h-screen bg-[#030303] text-white font-sans overflow-hidden flex flex-col relative">
+    <div className="h-screen bg-[#050505] text-white font-sans overflow-hidden flex flex-col antialiased">
+      
       <AnimatePresence>
         {(!isIframeLoaded || loading) && !error && (
-          <motion.div 
-            initial={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-[#030303] flex flex-col items-center justify-center"
-          >
-            <Loader2 className="animate-spin text-emerald-500 mb-8" size={64} />
-            <h2 className="text-2xl font-black italic tracking-[0.5em] text-white uppercase text-center">
-              Initializing_{currentMode}
-            </h2>
+          <motion.div initial={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-[#050505] flex flex-col items-center justify-center">
+            <Loader2 className="animate-spin text-emerald-500 mb-6" size={48} />
+            <div className="text-center">
+              <h2 className="text-xl font-bold tracking-widest text-white uppercase mb-2">Deploying Workspace</h2>
+              <p className="text-white/40 font-mono text-xs uppercase tracking-tighter">Setting up secure node: {domain}/{taskId}</p>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       <AnimatePresence>
         {isCompleted && (
-          <motion.div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
-            <motion.div className="bg-[#080808] border border-emerald-500/30 p-12 rounded-[3rem] text-center max-w-md shadow-2xl">
-              <CheckCircle size={64} className="text-emerald-500 mx-auto mb-6" />
-              <h2 className="text-3xl font-black italic uppercase text-white mb-2">Protocol_Breached</h2>
-              <div className="flex flex-col gap-2 mb-8">
-                <div className="flex items-center justify-center gap-2 text-[10px] font-black uppercase text-emerald-400">
-                  <Fingerprint size={14} /> Identity_Verified
-                </div>
-                {focusEvents.length > 0 && (
-                  <div className="flex items-center justify-center gap-2 text-[10px] font-black uppercase text-amber-500">
-                    <ShieldAlert size={14} /> {focusEvents.length}_Focus_Violations_Logged
-                  </div>
-                )}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-[#0f0f0f] border border-white/10 p-10 rounded-3xl text-center max-w-sm shadow-2xl">
+              <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                <CheckCircle size={32} className="text-emerald-500" />
               </div>
-              <button onClick={() => navigate(`/dashboard`)} className="w-full py-4 bg-emerald-500 text-black font-black uppercase text-[11px] tracking-widest rounded-2xl">Return to Console</button>
+              <h2 className="text-2xl font-bold text-white mb-2">Challenge Complete</h2>
+              <p className="text-white/50 text-sm mb-8 leading-relaxed">Forensic integrity check passed. Data has been cryptographically sealed to your profile.</p>
+              <button onClick={() => navigate(`/dashboard`)} className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold uppercase text-[11px] tracking-widest rounded-xl transition-colors">Return to Dashboard</button>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <header className="h-16 border-b border-white/10 bg-black/60 backdrop-blur-md flex items-center justify-between px-8 relative z-50">
+      <header className="h-14 border-b border-white/10 bg-black/40 backdrop-blur-md flex items-center justify-between px-6 shrink-0">
         <div className="flex items-center gap-6">
-          <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2 text-white/40 hover:text-emerald-400 transition-all text-[10px] font-black uppercase tracking-widest">
-            <ArrowLeft size={16} /> Abort_Mission
+          <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2 text-white/40 hover:text-white transition-colors text-[10px] font-bold uppercase tracking-widest">
+            <ArrowLeft size={14} /> Back
           </button>
+          <div className="h-4 w-px bg-white/10" />
           <div className="flex items-center gap-3">
-            <div className="w-7 h-7 bg-emerald-500 rounded-lg flex items-center justify-center font-black text-black text-[10px]">SK</div>
-            <span className="text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-white/80">
-               Sector: <span className="text-emerald-500">{domain}</span> / {taskId}
+            <span className="text-[10px] font-bold uppercase tracking-widest text-white/80">
+               Sector: <span className="text-emerald-400">{domain}</span> <span className="text-white/20 mx-1">/</span> {taskId}
             </span>
           </div>
         </div>
+        
         <div className="flex items-center gap-4">
-          <div className={`flex items-center gap-2 px-3 py-1 rounded-full border text-[9px] font-black uppercase tracking-widest ${
-            currentMode === 'learning' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'
-          }`}>
-            {currentMode === 'learning' ? <GraduationCap size={12}/> : <Briefcase size={12}/>}
-            {currentMode.toUpperCase()}_MODE
-          </div>
+            {currentMode === 'hiring' && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/20 rounded text-[9px] font-black text-red-400 uppercase tracking-widest animate-pulse">
+                    <Camera size={12} /> Visual_Sync_Active
+                </div>
+            )}
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-md border text-[10px] font-bold uppercase tracking-widest ${
+              currentMode === 'learning' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'
+            }`}>
+              {currentMode === 'learning' ? <GraduationCap size={14}/> : <Briefcase size={14}/>}
+              {currentMode} Mode
+            </div>
         </div>
       </header>
 
       <main className="flex-1 flex overflow-hidden">
-        <aside className="w-72 border-r border-white/10 p-6 bg-[#050505] overflow-y-auto">
-          <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500 mb-6 flex items-center gap-2">
-            <ShieldAlert size={14} /> Mission_Brief
-          </h3>
-          <p className="text-xs text-white/50 leading-relaxed font-medium mb-8">
-            Objective: Identifying entry points. Use <span className="text-white font-bold">SQL Injection</span> to bypass auth.
-          </p>
-          <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-            <span className="text-[9px] font-mono text-white/30 uppercase block mb-2">Target_Access</span>
-            <div className="flex items-center gap-2">
-              <Wifi size={12} className="text-emerald-500" />
-              <code className="text-[11px] text-emerald-400 font-mono">
-                {isIframeLoaded ? `127.0.0.1:${containerData.port}` : "Establishing..."}
-              </code>
-            </div>
+        {/* LEFT SIDEBAR: MISSION BRIEF */}
+        <aside className="w-72 border-r border-white/10 p-6 bg-[#080808] flex flex-col shrink-0">
+          <div className={`flex items-center gap-2 mb-6 ${meta.iconColor} uppercase font-bold text-[11px] tracking-widest`}>
+            <ShieldAlert size={16} /> Briefing: {meta.title}
           </div>
-          {focusEvents.length > 0 && (
-            <div className="mt-8 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl">
-               <div className="flex items-center gap-2 text-red-400 mb-2">
-                  <EyeOff size={14} />
-                  <span className="text-[9px] font-black uppercase tracking-widest">Focus_Lost</span>
-               </div>
-               <p className="text-[10px] text-white/40 italic leading-relaxed">
-                  Multiple tab switches detected. This session has been flagged for audit.
-               </p>
-            </div>
-          )}
+          
+          <div className="space-y-6 flex-1 overflow-y-auto">
+            <section>
+              <h4 className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-3">Objective</h4>
+              <p className="text-sm text-white/80 leading-relaxed">
+                {meta.objective}
+              </p>
+            </section>
+
+            <section className="p-4 bg-white/5 rounded-xl border border-white/5">
+              <div className="flex items-center gap-2 text-white/30 text-[9px] font-bold uppercase mb-3">
+                <Target size={12} /> Priority Focus
+              </div>
+              <p className="text-[11px] text-emerald-400 font-mono italic">
+                {meta.requirement}
+              </p>
+            </section>
+
+            <section className="p-4 bg-white/5 rounded-xl border border-white/5">
+              <div className="flex items-center gap-2 text-white/30 text-[9px] font-bold uppercase mb-3">
+                <Wifi size={12} /> Connection Details
+              </div>
+              <code className="text-[11px] text-emerald-400 font-mono block break-all bg-black/40 p-2 rounded">
+                {isIframeLoaded ? `http://localhost:${containerData.port}` : "Connecting..."}
+              </code>
+            </section>
+
+            {focusEvents.length > 0 && (
+              <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-xl">
+                 <div className="flex items-center gap-2 text-red-400 mb-2 font-bold text-[10px] uppercase">
+                    <AlertTriangle size={14} /> Alert
+                 </div>
+                 <p className="text-[10px] text-white/50 italic leading-snug">
+                    Unauthorized tab switching detected. Integrity score reduced.
+                 </p>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-6 border-t border-white/5">
+             <div className="flex items-center gap-2 text-white/20 text-[10px] font-bold uppercase">
+               <Clock size={12} /> Session Active
+             </div>
+          </div>
         </aside>
 
-        <section className="flex-1 bg-black relative flex items-center justify-center p-4">
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: isIframeLoaded ? 1 : 0 }} className="w-full h-full rounded-[1.5rem] overflow-hidden border border-white/10 shadow-2xl bg-[#080808]">
-            <iframe 
-              src={`http://127.0.0.1:${containerData.port}?mode=${currentMode}`} 
-              onLoad={() => { setIsIframeLoaded(true); setLoading(false); }}
-              className="w-full h-full border-none"
-              title="Skillev Lab Interface"
-            />
-          </motion.div>
+        {/* CENTER: THE LAB ENVIRONMENT */}
+        <section className="flex-1 bg-black p-4 relative">
+          <div className="w-full h-full rounded-2xl overflow-hidden border border-white/10 shadow-inner bg-[#000]">
+            {error ? (
+              <div className="h-full flex flex-col items-center justify-center p-8 text-center">
+                <AlertTriangle size={48} className="text-red-500 mb-4" />
+                <h3 className="text-xl font-bold mb-2">Environment Crash</h3>
+                <p className="text-white/40 text-sm mb-6 max-w-xs">{error}</p>
+                <button onClick={() => window.location.reload()} className="px-6 py-2 bg-white/10 rounded-lg text-xs font-bold uppercase">Retry Connection</button>
+              </div>
+            ) : (
+              <iframe 
+                src={`http://127.0.0.1:${containerData.port}?mode=${currentMode}`} 
+                onLoad={() => { setIsIframeLoaded(true); setLoading(false); }}
+                className="w-full h-full border-none"
+                title="Lab Workspace"
+              />
+            )}
+          </div>
         </section>
 
-        <aside className="w-80 border-l border-white/10 bg-[#050505] flex flex-col">
-          <div className="p-6 border-b border-white/10">
-            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-2">
-              <Terminal size={14} /> Evidence_Log
+        {/* RIGHT SIDEBAR: LOGS */}
+        <aside className="w-80 border-l border-white/10 bg-[#080808] flex flex-col shrink-0">
+          <div className="p-4 border-b border-white/10 flex items-center justify-between">
+            <h3 className="text-[11px] font-bold uppercase tracking-widest text-emerald-400 flex items-center gap-2">
+              <Terminal size={14} /> Telemetry
             </h3>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           </div>
-          <div className="flex-1 overflow-y-auto p-4 font-mono text-[10px] space-y-3 bg-black/20 text-white/40">
-            {logs.map((log, i) => (
-              <div key={i} className="flex gap-2">
-                <span className="text-white/20 whitespace-nowrap">[{log.time}]</span>
-                <span className={`${log.type === "success" ? "text-emerald-400" : log.type === "error" ? "text-red-400" : "text-white/40"}`}>
-                  <span className="text-white/10 mr-1">$</span>{log.msg}
-                </span>
-              </div>
-            ))}
+          
+          <div className="flex-1 overflow-y-auto p-4 font-mono text-[10px] bg-black/30">
+            <div className="space-y-3">
+              {logs.map((log, i) => (
+                <div key={i} className="flex gap-2 leading-relaxed">
+                  <span className="text-white/20 shrink-0">[{log.time.split(' ')[0]}]</span>
+                  <span className={`${
+                    log.type === "success" ? "text-emerald-400" : 
+                    log.type === "error" ? "text-red-400" : "text-white/60"
+                  }`}>
+                    {log.msg}
+                  </span>
+                </div>
+              ))}
+              {logs.length === 0 && <div className="text-white/10 italic">Waiting for connection...</div>}
+            </div>
           </div>
         </aside>
       </main>

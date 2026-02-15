@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from jose import jwt, JWTError
+# main.py - Top of the file
+from datetime import datetime  # <--- Add this line
 
 # Internal Imports
 import models 
@@ -120,7 +122,7 @@ async def stop_task(
         )
     return {"status": "success", "message": "Environment wiped."}
 
-# --- 6. ANTI-CHEAT: BIOMETRIC SYNC ---
+# --- 6. ANTI-CHEAT: BIOMETRIC & INTEGRITY SYNC ---
 
 @app.post("/users/sync-typing-profile")
 async def sync_typing_profile(
@@ -129,51 +131,96 @@ async def sync_typing_profile(
     db: Session = Depends(get_db)
 ):
     data = await request.json()
-    keystrokes = data.get("keystrokes", [])
     report_id = data.get("report_id")
+    keystrokes = data.get("keystrokes", [])
+    violations = data.get("focus_violations", [])
     mode = data.get("mode")
 
-    if not report_id or not keystrokes:
-        return {"status": "skipped", "reason": "Insufficient data"}
+    if not report_id:
+        raise HTTPException(status_code=400, detail="Report ID is required.")
 
-    # 1. Analyze the current behavior
-    metrics = utils.analyze_typing_behavior(keystrokes)
-    
-    # 2. Find the report to attach metrics to
     report = db.query(models.EvidenceReport).filter(models.EvidenceReport.id == report_id).first()
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise HTTPException(status_code=404, detail="Evidence Protocol not found.")
+    
+    db.refresh(report)
 
+    # 1. Analyze Typing Biometrics
+    metrics = utils.analyze_typing_behavior(keystrokes)
+    
+    # 2. Process Violations & Update Log Timeline
+    updated_logs = list(report.logs) if report.logs else []
+    existing_timestamps = {l.get("timestamp") for l in updated_logs if l.get("type") == "security_alert"}
+
+    for v in violations:
+        if v["time"] not in existing_timestamps:
+            updated_logs.append({
+                "timestamp": v["time"],
+                "type": "security_alert",
+                "message": "EVIDENCE_LOG: Integrity_Violation - Browser tab focus lost. External research suspected."
+            })
+    
+    report.logs = updated_logs
+
+    # 3. Identity & Integrity Scoring
     if mode == "learning":
-        # Store baseline for the user
         current_user.typing_profile = metrics
-        report.integrity_score = 1.0 # Baseline is always perfect
+        report.integrity_score = 1.0
         report.identity_verified = True
     else:
-        # Cross-verify against the baseline stored in the User object
-        verified, score = utils.verify_identity_match(current_user.typing_profile, metrics)
-        report.identity_verified = verified
-        report.integrity_score = score
+        is_match, base_score = utils.verify_identity_match(current_user.typing_profile, metrics)
+        
+        # Deduct 10% per focus violation, 50% for identity mismatch
+        focus_penalty = len(violations) * 0.10
+        identity_penalty = 0.0 if is_match else 0.50
+        
+        final_score = max(0.0, base_score - focus_penalty - identity_penalty)
+        report.identity_verified = is_match
+        report.integrity_score = round(final_score, 2)
 
     db.commit()
     return {
-        "status": "verified", 
-        "integrity": report.integrity_score, 
-        "match": report.identity_verified
+        "status": "sealed",
+        "integrity": report.integrity_score,
+        "identity_match": report.identity_verified
     }
 
-# --- 7. EVIDENCE ROUTES ---
+# --- 7. EVIDENCE & AI AUDIT ROUTES ---
+
+@app.get("/evidence/ai-analysis/{report_id}")
+async def get_ai_analysis(
+    report_id: int, 
+    current_user = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    Triggers the Phi-3 AI engine to analyze forensic logs for a specific report.
+    """
+    report = db.query(models.EvidenceReport).filter(
+        models.EvidenceReport.id == report_id,
+        models.EvidenceReport.user_id == current_user.id
+    ).first()
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Evidence report not found.")
+
+    # Call the Phi-3 analysis function from utils
+    analysis = utils.analyze_forensic_evidence(report.logs, report.task_id, report.mode)
+    
+    return {
+        "report_id": report_id,
+        "ai_insight": analysis
+    }
 
 @app.get("/users/my-evidence")
 def get_my_evidence(
     current_user = Depends(get_current_user), 
     db: Session = Depends(get_db)
 ):
-    reports = db.query(models.EvidenceReport)\
-                .filter(models.EvidenceReport.user_id == current_user.id)\
-                .order_by(models.EvidenceReport.created_at.desc())\
-                .all()
-    return reports
+    return db.query(models.EvidenceReport)\
+             .filter(models.EvidenceReport.user_id == current_user.id)\
+             .order_by(models.EvidenceReport.created_at.desc())\
+             .all()
 
 @app.get("/evidence/task-history/{task_id}")
 def get_task_history(
@@ -192,89 +239,63 @@ def get_task_history(
     
     return reports
 
-@app.get("/evidence/public/{report_id}")
-def get_public_evidence(report_id: int, db: Session = Depends(get_db)):
-    report = db.query(models.EvidenceReport).filter(models.EvidenceReport.id == report_id).first()
-    if not report:
-        raise HTTPException(status_code=404, detail="Evidence Protocol not found.")
-    
-    return {
-        "report_id": report.id,
-        "status": report.status,
-        "task": report.task_id,
-        "mode": report.mode,
-        "integrity_score": report.integrity_score,
-        "identity_verified": report.identity_verified,
-        "full_timeline": report.logs
-    }
-
-@app.post("/users/sync-typing-profile")
-async def sync_typing_profile(
+@app.post("/evidence/upload-visual")
+async def upload_visual_evidence(
     request: Request,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     data = await request.json()
     report_id = data.get("report_id")
-    keystrokes = data.get("keystrokes", [])
-    violations = data.get("focus_violations", [])
-    mode = data.get("mode")
+    img_data = data.get("image") 
+    img_type = data.get("type")
 
-    if not report_id:
-        raise HTTPException(status_code=400, detail="Report ID is required.")
-
-    # 1. Fetch the specific report and refresh to get latest logs from Evidence Engine
     report = db.query(models.EvidenceReport).filter(models.EvidenceReport.id == report_id).first()
     if not report:
-        raise HTTPException(status_code=404, detail="Evidence Protocol not found.")
-    
-    db.refresh(report)
+        raise HTTPException(status_code=404, detail="Forensic Node Not Found")
 
-    # 2. Analyze Typing Biometrics
-    metrics = utils.analyze_typing_behavior(keystrokes)
-    
-    # 3. Process Violations & Update Log Timeline
-    updated_logs = list(report.logs) if report.logs else []
-    
-    # We use a set of timestamps to prevent duplicate violation entries
-    existing_timestamps = {l.get("timestamp") for l in updated_logs if l.get("type") == "security_alert"}
+    new_capture = {
+        "timestamp": datetime.now().isoformat(), # This was causing the error
+        "type": img_type,
+        "data": img_data
+    }
 
-    for v in violations:
-        if v["time"] not in existing_timestamps:
-            updated_logs.append({
-                "timestamp": v["time"],
-                "type": "security_alert",
-                "message": "EVIDENCE_LOG: Integrity_Violation - Browser tab focus lost. External research suspected."
-            })
+    # Important: Re-assign to trigger SQLAlchemy JSON change detection
+    current_visuals = list(report.visual_evidence) if report.visual_evidence else []
+    current_visuals.append(new_capture)
+    report.visual_evidence = current_visuals 
     
-    report.logs = updated_logs
+    db.commit()
+    return {"status": "captured"}
 
-    # 4. Identity & Integrity Scoring
-    if mode == "learning":
-        # Learning mode establishes the baseline; score is always 100%
-        current_user.typing_profile = metrics
-        report.integrity_score = 1.0
-        report.identity_verified = True
-    else:
-        # Hiring mode performs cross-verification
-        is_match, base_score = utils.verify_identity_match(current_user.typing_profile, metrics)
-        
-        # PENALTY LOGIC:
-        # - Deduct 10% (0.10) for every focus violation (tab switch)
-        # - Deduct 50% (0.50) if biometric identity does not match
-        focus_penalty = len(violations) * 0.10
-        identity_penalty = 0.0 if is_match else 0.50
-        
-        final_score = max(0.0, base_score - focus_penalty - identity_penalty)
-        
-        report.identity_verified = is_match
-        report.integrity_score = round(final_score, 2)
+# --- NEW: PATCH ROUTE FOR FORENSIC UPDATES ---
+
+@app.patch("/evidence/update/{report_id}")
+async def update_evidence(
+    report_id: int,
+    request: Request,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Find the report
+    report = db.query(models.EvidenceReport).filter(
+        models.EvidenceReport.id == report_id,
+        models.EvidenceReport.user_id == current_user.id
+    ).first()
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Forensic Report not found.")
+
+    # Get the update data from the request body
+    data = await request.json()
+    
+    # Update only the provided fields (Surgical Update)
+    if "status" in data:
+        report.status = data["status"]
+    if "integrity_score" in data:
+        report.integrity_score = data["integrity_score"]
 
     db.commit()
+    db.refresh(report)
     
-    return {
-        "status": "sealed",
-        "integrity": report.integrity_score,
-        "violations_detected": len(violations),
-        "identity_match": report.identity_verified
-    }
+    return report

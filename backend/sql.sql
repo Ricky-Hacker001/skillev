@@ -7,3 +7,5 @@ ALTER TABLE evidence_reports ADD COLUMN IF NOT EXISTS mode VARCHAR DEFAULT 'hiri
 ALTER TABLE users ADD COLUMN typing_profile JSON;
 ALTER TABLE evidence_reports ADD COLUMN integrity_score FLOAT DEFAULT 1.0;
 ALTER TABLE evidence_reports ADD COLUMN identity_verified BOOLEAN DEFAULT TRUE;
+ALTER TABLE evidence_reports 
+ADD COLUMN visual_evidence JSONB DEFAULT '[]'::jsonb;

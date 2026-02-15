@@ -3,3 +3,7 @@
 
 run cmds
  python3 -m uvicorn main:app --reload   
+
+ docker build -t skillev-labs-auth:latest .
+
+ docker build --no-cache -t skillev-labs-auth:V2 .

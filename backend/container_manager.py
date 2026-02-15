@@ -3,7 +3,10 @@ import socket
 import time
 import threading
 from datetime import datetime
+from datetime import datetime
 from sqlalchemy.sql import func
+# main.py - Top of the file
+  # <--- Add this line
 
 # Internal Imports
 from database import SessionLocal
@@ -105,7 +108,7 @@ def start_sub_room_container(user_id: int, domain: str, task_id: str, mode: str 
     
     image_map = {
         "sql-injection": "skillev-labs-sqli:v5",
-        "broken-auth": "skillev-labs-auth:latest"
+        "broken-auth": "skillev-labs-auth:V2"
     }
     
     image = image_map.get(task_id)
