@@ -14,7 +14,7 @@ export default function EvidenceReport() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [selectedImage, setSelectedImage] = useState(null); // For Lightbox
+  const [selectedImage, setSelectedImage] = useState(null); 
   
   const [aiAnalysis, setAiAnalysis] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -79,7 +79,6 @@ export default function EvidenceReport() {
   return (
     <div className="min-h-screen bg-[#030303] text-[#F5F5F5] font-sans selection:bg-emerald-500/30">
       
-      {/* 1. LIGHTBOX MODAL */}
       <AnimatePresence>
         {selectedImage && (
           <motion.div 
@@ -97,7 +96,6 @@ export default function EvidenceReport() {
         )}
       </AnimatePresence>
 
-      {/* 2. NAVIGATION */}
       <nav className="fixed top-0 w-full z-50 border-b border-white/5 bg-black/80 backdrop-blur-xl px-10 h-16 flex items-center justify-between">
         <button onClick={() => navigate("/dashboard")} className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-white/40 hover:text-emerald-400 transition-all">
           <ArrowLeft size={14} /> Back_to_Console
@@ -110,7 +108,6 @@ export default function EvidenceReport() {
 
       <div className="max-w-5xl mx-auto pt-32 pb-40 px-10">
         
-        {/* 3. AUDIT HEADER */}
         <header className="mb-20">
           <div className="flex flex-col md:flex-row justify-between items-end gap-10">
              <div className="space-y-4">
@@ -131,10 +128,15 @@ export default function EvidenceReport() {
              </button>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-12">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-12">
              {[
                { icon: <Clock size={14}/>, label: "Total_Phases", val: history.length },
                { icon: <Activity size={14}/>, label: "Visual_Caps", val: history.reduce((acc, curr) => acc + (curr.visual_evidence?.length || 0), 0) },
+               { 
+                 icon: <AlertTriangle size={14} className="text-red-500"/>, 
+                 label: "Integrity_Alerts", 
+                 val: history.reduce((acc, curr) => acc + (curr.logs?.filter(l => l.message.includes("Integrity_Violation") || l.type === "security_alert").length || 0), 0) 
+               },
                { icon: <Cpu size={14}/>, label: "Node_Type", val: "Isolated_Docker" },
                { icon: <ShieldCheck size={14}/>, label: "Audit_AI", val: "Phi-3_Engine" },
              ].map((s, i) => (
@@ -148,7 +150,6 @@ export default function EvidenceReport() {
           </div>
         </header>
 
-        {/* 4. AI FORENSIC INSIGHTS */}
         <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -190,12 +191,11 @@ export default function EvidenceReport() {
             </div>
         </motion.div>
 
-        {/* 5. MULTI-PHASE TIMELINE */}
         <div className="space-y-32">
           {history.map((report, idx) => {
             const isLearning = report.mode === "learning";
-            const isVerified = report.identity_verified;
-            const violations = report.logs?.filter(l => l.message.includes("Integrity_Violation")).length || 0;
+            const phaseViolations = report.logs?.filter(l => l.message.includes("Integrity_Violation") || l.type === "security_alert") || [];
+            const violationCount = phaseViolations.length;
 
             return (
               <section key={report.id} className="relative">
@@ -222,16 +222,31 @@ export default function EvidenceReport() {
                   </div>
 
                   <div className="flex items-center gap-10">
-                    <div className="space-y-1">
-                        <span className="block text-[9px] font-black text-white/20 uppercase tracking-[0.3em]">Integrity</span>
-                        <span className={`text-sm font-mono font-bold ${report.integrity_score > 0.7 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                    <div className="space-y-1 text-right">
+                        <span className="block text-[9px] font-black text-white/20 uppercase tracking-[0.3em]">Integrity_Score</span>
+                        <span className={`text-xl font-mono font-bold ${report.integrity_score > 0.7 ? 'text-emerald-500' : 'text-amber-500'}`}>
                           {(report.integrity_score * 100).toFixed(1)}%
                         </span>
                     </div>
                   </div>
                 </div>
 
-                {/* 6. VISUAL EVIDENCE GALLERY (NEW) */}
+                {violationCount > 0 && (
+                  <motion.div 
+                    initial={{ opacity: 0, x: -20 }} 
+                    animate={{ opacity: 1, x: 0 }}
+                    className="mb-8 p-4 bg-red-500/10 border border-red-500/30 rounded-2xl flex items-center gap-4"
+                  >
+                    <ShieldAlert className="text-red-500" size={20} />
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-red-500">Security Alert: Behavioral Anomaly Detected</p>
+                      <p className="text-xs text-red-200/60 leading-relaxed">
+                        This phase triggered {violationCount} integrity violations. Behavioral consistency failed validation check.
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+
                 {!isLearning && report.visual_evidence?.length > 0 && (
                   <div className="mb-12 grid grid-cols-2 md:grid-cols-4 gap-4">
                     {report.visual_evidence.map((img, i) => (
@@ -254,26 +269,37 @@ export default function EvidenceReport() {
                 )}
 
                 <div className="bg-[#080808] border border-white/5 rounded-[2.5rem] overflow-hidden shadow-2xl">
-                  {/* ... Logs Section remains similar to your existing clean design ... */}
                   <div className="px-8 py-5 bg-white/5 border-b border-white/5 flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-white/40 italic">
                     <span>Audit_Trace_Sequence</span>
                     <span>Outcome</span>
                   </div>
                   <div className="divide-y divide-white/5">
-                    {report.logs?.filter(l => l.message.includes("SUCCESS") || l.message.includes("EVIDENCE_LOG")).map((log, i) => {
+                    {report.logs?.filter(l => 
+                      l.message.includes("SUCCESS") || 
+                      l.message.includes("EVIDENCE_LOG") || 
+                      l.type === "security_alert"
+                    ).map((log, i) => {
                       const isSuccess = log.message.includes("SUCCESS");
-                      const isViolation = log.message.includes("Integrity_Violation");
+                      const isViolation = log.message.includes("Integrity_Violation") || log.type === "security_alert";
+                      
                       return (
-                        <div key={i} className={`flex items-start gap-8 px-8 py-8 transition-colors ${isViolation ? 'bg-red-500/[0.03]' : 'hover:bg-white/[0.02]'}`}>
-                          <div className="w-20 flex-shrink-0 pt-1 text-[10px] font-mono text-white/20">{new Date(log.timestamp).toLocaleTimeString([], { hour12: false })}</div>
+                        <div key={i} className={`flex items-start gap-8 px-8 py-8 transition-colors ${isViolation ? 'bg-red-500/[0.05] border-l-4 border-red-500' : 'hover:bg-white/[0.02]'}`}>
+                          <div className="w-20 flex-shrink-0 pt-1 text-[10px] font-mono text-white/20">
+                            {new Date(log.timestamp).toLocaleTimeString([], { hour12: false })}
+                          </div>
                           <div className="flex-1 space-y-4">
                             <div className="flex items-center gap-3">
-                               <div className={`w-1.5 h-1.5 rounded-full ${isSuccess ? 'bg-emerald-500' : isViolation ? 'bg-red-500' : 'bg-white/20'}`} />
+                               <div className={`w-1.5 h-1.5 rounded-full ${isSuccess ? 'bg-emerald-500' : isViolation ? 'bg-red-500 animate-pulse' : 'bg-white/20'}`} />
                                <span className={`text-[10px] font-black uppercase tracking-widest ${isSuccess ? 'text-emerald-500' : isViolation ? 'text-red-500' : 'text-white/40'}`}>
-                                  {isSuccess ? 'Critical_Success' : isViolation ? 'Security_Alert' : 'Interaction'}
+                                  {isSuccess ? 'Critical_Success' : isViolation ? 'Security_Threat_Detected' : 'Interaction'}
                                </span>
                             </div>
-                            <div className={`font-mono text-sm leading-relaxed p-5 rounded-2xl border ${isSuccess ? 'bg-emerald-500/5 border-emerald-500/20 text-white' : isViolation ? 'bg-red-500/10 border-red-500/20 text-red-200' : 'bg-black border-white/5 text-white/70'}`}>
+                            <div className={`font-mono text-sm leading-relaxed p-5 rounded-2xl border ${
+                              isSuccess ? 'bg-emerald-500/5 border-emerald-500/20 text-white' : 
+                              isViolation ? 'bg-red-900/20 border-red-500/40 text-red-200' : 
+                              'bg-black border-white/5 text-white/70'
+                            }`}>
+                               {isViolation && <AlertTriangle size={14} className="inline mr-2 mb-1 text-red-500" />}
                                {cleanMessage(log.message)}
                             </div>
                           </div>

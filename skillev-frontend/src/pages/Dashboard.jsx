@@ -64,7 +64,9 @@ export default function Dashboard() {
       tasks: [
         { id: "sql-injection", title: "SQL Injection", level: "Beginner", time: "20m" },
         { id: "broken-auth", title: "Broken Authentication", level: "Intermediate", time: "30m" },
-        { id: "idor", title: "IDOR Bypass", level: "Advanced", time: "45m" }
+        { id: "idor", title: "IDOR Bypass", level: "Advanced", time: "45m" },
+        { id: "input-validation", title: "Validation Bypass", level: "Beginner", time: "15m" },
+        { id: "secure-fix", title: "Secure Fix Verification", level: "Intermediate", time: "20m" }
       ]
     },
     {
@@ -73,9 +75,10 @@ export default function Dashboard() {
       icon: <Code className="text-emerald-400" size={28} />,
       desc: "Build the future. Architecting scalable systems and secure backend middleware.",
       tasks: [
-        { id: "flexbox-lab", title: "CSS Flexbox Repair", level: "Beginner", time: "15m" }, 
-        { id: "api-design", title: "REST API Architecture", level: "Beginner", time: "30m" },
-        { id: "db-optimization", title: "Query Optimization", level: "Advanced", time: "40m" }
+        { id: "api-design", title: "REST API Architecture", level: "Beginner", time: "30m" }, 
+        { id: "fullstack-link", title: "API Integration Link", level: "Intermediate", time: "25m" },
+        { id: "task-manager", title: "Task Manager Dashboard", level: "Intermediate", time: "60m" },
+        { id: "task-management-api", title: "Task Management API", level: "Intermediate", time: "30m" }
       ]
     }
   ];

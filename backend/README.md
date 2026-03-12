@@ -7,3 +7,7 @@ run cmds
  docker build -t skillev-labs-auth:latest .
 
  docker build --no-cache -t skillev-labs-auth:V2 .
+
+ docker build -t skillev-labs-idor:v1 .
+
+ docker build --load -t skillev-labs-idor:v1 .

@@ -50,6 +50,12 @@ export default function Workspace() {
         objective: "Manipulate resource identifiers in URL parameters to access unauthorized user data nodes.",
         requirement: "Parameter Tampering",
         iconColor: "text-amber-400"
+      },
+      "jwt-auth": {
+        title: "JWT Middleware",
+        objective: "Identify and exploit misconfigurations in JSON Web Tokens (JWT) to escalate privileges from 'viewer' to 'admin'.",
+        requirement: "JWT Structure & Claims Mastery",
+        iconColor: "text-blue-400"
       }
     };
     return registry[taskId] || { 

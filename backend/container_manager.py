@@ -3,10 +3,7 @@ import socket
 import time
 import threading
 from datetime import datetime
-from datetime import datetime
 from sqlalchemy.sql import func
-# main.py - Top of the file
-  # <--- Add this line
 
 # Internal Imports
 from database import SessionLocal
@@ -41,15 +38,24 @@ def cleanup_existing_task(user_id, task_id, mode):
         print(f"🧹 CLEANUP: Nuked isolated container {container_name}")
     except docker.errors.NotFound:
         pass
+    except Exception as e:
+        print(f"⚠️ Cleanup Warning: {e}")
 
 def capture_evidence_engine(container_id, user_id, domain, task_id, mode):
     """
     Streams logs from Docker and commits them to a fresh DB entry.
-    Since we create a NEW report here, logs never mix.
+    Updated with Error Handling to prevent race-condition crashes.
     """
     db = SessionLocal()
     try:
-        # 1. Create a brand new EvidenceReport entry for this specific attempt
+        # 1. Verification: Ensure container still exists before attaching
+        try:
+            container = client.containers.get(container_id)
+        except docker.errors.NotFound:
+            print(f"ℹ️ Engine: Container {container_id} not found (likely nuked by cleanup).")
+            return
+
+        # 2. Create a brand new EvidenceReport entry
         report = models.EvidenceReport(
             user_id=user_id,
             domain=domain,
@@ -63,33 +69,35 @@ def capture_evidence_engine(container_id, user_id, domain, task_id, mode):
         db.commit()
         db.refresh(report)
 
-        container = client.containers.get(container_id)
-        
-        # 2. Stream logs and tag them
-        for line in container.logs(stream=True, follow=True, tail=0):
-            log_entry = line.decode('utf-8').strip()
-            
-            # Tag the log with the mode for aggregate history clarity
-            tagged_message = f"[MODE:{mode.upper()}] {log_entry}"
-            
-            new_event = {
-                "timestamp": datetime.now().isoformat(),
-                "type": "stdout",
-                "message": tagged_message
-            }
+        # 3. Stream logs and tag them
+        # Wrap in another try-except to catch container removal during streaming
+        try:
+            for line in container.logs(stream=True, follow=True, tail=0):
+                log_entry = line.decode('utf-8').strip()
+                
+                # Tag for aggregate history clarity
+                tagged_message = f"[MODE:{mode.upper()}] {log_entry}"
+                
+                new_event = {
+                    "timestamp": datetime.now().isoformat(),
+                    "type": "stdout",
+                    "message": tagged_message
+                }
 
-            db.refresh(report)
-            current_logs = list(report.logs) if report.logs else []
-            current_logs.append(new_event)
-            report.logs = current_logs
+                db.refresh(report)
+                current_logs = list(report.logs) if report.logs else []
+                current_logs.append(new_event)
+                report.logs = current_logs
 
-            # 3. Success Detection
-            if "SUCCESS" in log_entry.upper():
-                report.status = "completed"
-                report.completed_at = datetime.now()
-                print(f"✅ SEALED: {mode.upper()} evidence for User {user_id}")
-            
-            db.commit()
+                # Success Detection
+                if "SUCCESS" in log_entry.upper():
+                    report.status = "completed"
+                    report.completed_at = datetime.now()
+                    print(f"✅ SEALED: {mode.upper()} evidence for User {user_id}")
+                
+                db.commit()
+        except docker.errors.APIError:
+            print(f"ℹ️ Engine: Log stream for {container_id} stopped (container closed).")
                 
     except Exception as e:
         print(f"⚠️ Evidence Engine Error: {e}")
@@ -102,13 +110,18 @@ def start_sub_room_container(user_id: int, domain: str, task_id: str, mode: str 
     """
     get_or_create_room_network(domain)
     
-    # --- MODE ISOLATION LOGIC ---
-    # By including 'mode' in the name, we ensure the containers are physically distinct
     container_name = f"skillev_{user_id}_{task_id}_{mode}"
     
     image_map = {
         "sql-injection": "skillev-labs-sqli:v5",
-        "broken-auth": "skillev-labs-auth:V2"
+        "broken-auth": "skillev-labs-auth:V2",
+        "idor": "skillev-labs-idor:v1",
+        "input-validation": "skillev-labs-validation:v1",
+        "secure-fix": "skillev-labs-fix:v1",
+        "api-design": "skillev-labs-rest:v1",
+        "fullstack-link": "skillev-labs-fullstack-link:v1",
+        "task-management-api": "skillev-labs-crud:v1",
+        "task-manager": "skillev-labs-task-manager:v1"
     }
     
     image = image_map.get(task_id)
@@ -128,7 +141,7 @@ def start_sub_room_container(user_id: int, domain: str, task_id: str, mode: str 
             name=container_name,
             network=f"{domain}_room_net",
             detach=True,
-            environment={"LAB_MODE": mode}, # Flask app uses this for internal logic
+            environment={"LAB_MODE": mode},
             mem_limit="256m",
             nano_cpus=500000000, 
             ports={'5000/tcp': ('127.0.0.1', assigned_port)}, 
@@ -145,13 +158,13 @@ def start_sub_room_container(user_id: int, domain: str, task_id: str, mode: str 
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(0.5) 
                 if s.connect_ex(('127.0.0.1', assigned_port)) == 0:
-                    time.sleep(1.0) # Flask startup grace period
+                    time.sleep(1.0) 
                     is_ready = True
                     break
             time.sleep(0.2) 
 
         if is_ready:
-            # 5. Start a background thread to watch this specific mode's logs
+            # 5. Start background logging thread
             threading.Thread(
                 target=capture_evidence_engine, 
                 args=(container.id, user_id, domain, task_id, mode), 
